@@ -52,6 +52,19 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
+/// Resolve the bundled single-file dsh executable from the resource directory.
+/// The macOS bundler keeps the configured `resources/` directory name in the
+/// bundle layout; probe that layout first, then the flat one.
+#[cfg(not(dev))]
+fn bundled_exe(resources: &PathBuf) -> Option<PathBuf> {
+    for candidate in [resources.join("resources").join("dsh"), resources.join("dsh")] {
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
 /// Resolve the command that launches the dsh web server, plus its working directory.
 ///
 /// Order: `DSH_DESKTOP_SERVER` (whitespace-split command words) overrides
@@ -84,12 +97,10 @@ fn server_command(resources: Option<PathBuf>) -> Result<(Command, PathBuf), Stri
         let cwd = std::env::var("HOME")
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from("/"));
-        if let Some(exe) = resources.map(|dir| dir.join("dsh")) {
-            if exe.is_file() {
-                let mut cmd = Command::new(&exe);
-                cmd.args(["web", "--port", "0"]);
-                return Ok((cmd, cwd));
-            }
+        if let Some(exe) = resources.as_ref().and_then(bundled_exe) {
+            let mut cmd = Command::new(&exe);
+            cmd.args(["web", "--port", "0"]);
+            return Ok((cmd, cwd));
         }
         let mut cmd = Command::new("dsh");
         cmd.args(["web", "--port", "0"]);
