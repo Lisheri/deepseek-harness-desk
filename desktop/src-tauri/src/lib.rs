@@ -43,7 +43,9 @@ impl ServerState {
 }
 
 /// The repository root, fixed at compile time from the manifest location.
-/// `<repo>/desktop/src-tauri` -> `<repo>`.
+/// `<repo>/desktop/src-tauri` -> `<repo>`. Development builds only: the
+/// packaged shell resolves the bundled executable instead.
+#[cfg(dev)]
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()

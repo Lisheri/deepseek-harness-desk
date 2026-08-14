@@ -56,4 +56,4 @@ Output: `src-tauri/target/release/bundle/macos/DeepSeek Harness.app` and `src-ta
 - macOS is the verified target; the Windows and Linux webview backends are untested.
 - The bundled `dsh` executable is an unsigned nested binary: signing and notarizing the app for Gatekeeper-less distribution must sign it alongside the app bundle.
 - API credentials: Finder-launched apps do not inherit shell environment variables; set `DEEPSEEK_API_KEY` through the GUI's credentials plane instead.
-- First launch materializes the closure into `$DSH_HOME/profiles/node_modules` (a few hundred MB); afterwards, source-checkout `dsh` runs fail on that non-symlink directory — delete it to restore.
+- First launch materializes the bundled closure into `$DSH_HOME/profiles/node_modules` (a few hundred MB); a later source-checkout `dsh` run converts it back to symlinks automatically.

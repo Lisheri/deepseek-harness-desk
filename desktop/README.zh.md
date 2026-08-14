@@ -56,4 +56,4 @@ pnpm run desktop:build
 - macOS 是已验证目标；Windows 与 Linux 的 webview 后端未经测试。
 - 内置的 `dsh` 可执行是未签名的嵌套二进制：要发布给他人双击即用（免 Gatekeeper 拦截），签名与公证时必须连同它一起签名。
 - API 凭证：从 Finder 启动的应用不会继承 shell 环境变量；请通过 GUI 的凭证面板设置 `DEEPSEEK_API_KEY`。
-- 首次启动时应用会把闭包实体化到 `$DSH_HOME/profiles/node_modules`（约数百 MB）；此后用仓库源码跑 `dsh` 会因该目录不是软链而报错，删除该目录即可恢复。
+- 首次启动时应用会把闭包实体化到 `$DSH_HOME/profiles/node_modules`（约数百 MB）；之后再从源码跑 `dsh` 会自动把它换回软链。

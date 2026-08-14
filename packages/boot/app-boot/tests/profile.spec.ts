@@ -4,7 +4,7 @@
  * empty-root composition, and the installation module-fallback healing.
  */
 
-import { lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -12,7 +12,9 @@ import {
   composeEntries,
   healProfilesModuleFallback,
   initProfile,
+  isPackagedVfsPath,
   loadProfile,
+  materializePackageLink,
   PROFILE_PATCH_FILENAME,
   PROFILE_TEMPLATES,
   readProfileManifest,
@@ -22,6 +24,12 @@ import {
 } from '../src/index.ts'
 
 const tmp = (): string => mkdtempSync(join(tmpdir(), 'dsh-profile-'))
+
+/** The stamp `materializePackageLink` records for a target: the target plus this process's executable identity. */
+const packagedStamp = (target: string): string => {
+  const executableStat = statSync(process.execPath)
+  return `${target}@${executableStat.size}:${String(executableStat.mtimeMs)}`
+}
 
 /** Stage a fake installed app: package.json with deps and a node_modules holding bundles. */
 function stageInstallation(bundles: Record<string, { patch?: string; deps?: Record<string, string> }>): string {
@@ -239,6 +247,19 @@ describe('healProfilesModuleFallback', () => {
     expect(before).toContain('dep-of-a')
   })
 
+  it('links optional platform packages so out-of-tree plugins resolve them', () => {
+    const anchor = stageInstallation({})
+    const appManifest = JSON.parse(readFileSync(anchor, 'utf8')) as { optionalDependencies: Record<string, string> }
+    appManifest.optionalDependencies = { sharp: '0.0.0' }
+    writeFileSync(anchor, JSON.stringify(appManifest))
+    const modules = join(anchor, '..', 'node_modules')
+    mkdirSync(join(modules, 'sharp'), { recursive: true })
+    writeFileSync(join(modules, 'sharp', 'package.json'), JSON.stringify({ name: 'sharp', version: '0.0.0' }))
+    const home = tmp()
+    healProfilesModuleFallback(anchor, home)
+    expect(lstatSync(join(home, 'profiles', 'node_modules', 'sharp')).isSymbolicLink()).toBe(true)
+  })
+
   it('throws when a fallback entry is a real directory', () => {
     const anchor = stageInstallation({})
     const home = tmp()
@@ -270,3 +291,87 @@ describe('healProfilesModuleFallback', () => {
     expect(lstatSync(join(fallback, 'dsh-app')).isSymbolicLink()).toBe(true)
   })
 })
+
+describe('packaged-VFS fallback materialization', () => {
+  it('recognizes only pkg --sea snapshot paths', () => {
+    expect(isPackagedVfsPath('/snapshot/my-app/node_modules/@deepseek-ai/dsh-llm')).toBe(true)
+    expect(isPackagedVfsPath('/tmp/snapshot-ish')).toBe(false)
+    expect(isPackagedVfsPath('/Users/x/snapshot')).toBe(false)
+  })
+
+  it('copies a VFS package to disk as a real directory and stamps it', () => {
+    const source = stagePackageDir('pkg-a')
+    const link = join(tmp(), 'node_modules', 'pkg-a')
+    const stamps = new Map<string, string>()
+    materializePackageLink(link, source, stamps)
+    expect(lstatSync(link).isDirectory()).toBe(true)
+    expect(readFileSync(join(link, 'index.js'), 'utf8')).toBe('pkg-a')
+    expect(stamps.get(link)).toBe(packagedStamp(source))
+  })
+
+  it('skips an up-to-date stamped directory and re-copies a vanished one', () => {
+    const source = stagePackageDir('pkg-b')
+    const link = join(tmp(), 'node_modules', 'pkg-b')
+    const stamps = new Map<string, string>()
+    materializePackageLink(link, source, stamps)
+    // A later source change does not trigger a copy while the stamp matches.
+    writeFileSync(join(source, 'index.js'), 'changed')
+    materializePackageLink(link, source, stamps)
+    expect(readFileSync(join(link, 'index.js'), 'utf8')).toBe('pkg-b')
+    // A vanished directory is re-materialized.
+    rmSync(link, { recursive: true })
+    materializePackageLink(link, source, stamps)
+    expect(readFileSync(join(link, 'index.js'), 'utf8')).toBe('changed')
+  })
+
+  it('replaces a stale symlink and a stale-stamped directory at the link path', () => {
+    const source = stagePackageDir('pkg-c')
+    const link = join(tmp(), 'node_modules', 'pkg-c')
+    mkdirSync(join(link, '..'), { recursive: true })
+    symlinkSync(tmp(), link, 'junction')
+    const stamps = new Map<string, string>()
+    materializePackageLink(link, source, stamps)
+    expect(lstatSync(link).isDirectory()).toBe(true)
+    expect(readFileSync(join(link, 'index.js'), 'utf8')).toBe('pkg-c')
+    // A stamp from a different target re-copies the directory.
+    const other = stagePackageDir('pkg-c-other')
+    stamps.set(link, other)
+    materializePackageLink(link, source, stamps)
+    expect(readFileSync(join(link, 'index.js'), 'utf8')).toBe('pkg-c')
+    expect(stamps.get(link)).toBe(packagedStamp(source))
+  })
+
+  it('re-materializes when the executable changes even though the VFS target is unchanged', () => {
+    const source = stagePackageDir('pkg-upgrade')
+    const link = join(tmp(), 'node_modules', 'pkg-upgrade')
+    const stamps = new Map<string, string>()
+    materializePackageLink(link, source, stamps)
+    writeFileSync(join(link, 'index.js'), 'old-executable-copy')
+    // The stamp a previous executable version wrote: same target, foreign identity.
+    stamps.set(link, `${source}@0:0`)
+    materializePackageLink(link, source, stamps)
+    expect(readFileSync(join(link, 'index.js'), 'utf8')).toBe('pkg-upgrade')
+    expect(stamps.get(link)).toBe(packagedStamp(source))
+  })
+
+  it('converts a stamped materialized directory back to a symlink when the target is on disk again', () => {
+    const anchor = stageInstallation({})
+    const home = tmp()
+    const fallback = join(home, 'profiles', 'node_modules')
+    const link = join(fallback, 'dsh-app')
+    mkdirSync(link, { recursive: true })
+    // The stamp a packaged run would have written marks this directory as ours.
+    writeFileSync(join(fallback, '.dsh-materialized.json'), JSON.stringify({ [link]: '/snapshot/stale-target' }))
+    healProfilesModuleFallback(anchor, home)
+    expect(lstatSync(link).isSymbolicLink()).toBe(true)
+    expect(readlinkSync(link)).toContain('app')
+  })
+})
+
+/** Stage a fake package directory holding a distinguishable index file. */
+function stagePackageDir(marker: string): string {
+  const dir = tmp()
+  writeFileSync(join(dir, 'index.js'), marker)
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: marker, version: '0.0.0' }))
+  return dir
+}

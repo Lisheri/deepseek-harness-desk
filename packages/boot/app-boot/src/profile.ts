@@ -16,15 +16,18 @@
  * first from the dsh installation (the launcher's own package), then from the
  * profile directory. The Loader's `baseUrl` is the profile directory, whose
  * `node_modules` pnpm manages for out-of-tree plugins, while the maintained
- * flat fallback directory `$DSH_HOME/profiles/node_modules` (one symlink per
- * package the installation's app and bundles depend on) makes every in-box
- * plugin Node-resolvable from any profile through the ordinary parent-walk.
+ * flat fallback directory `$DSH_HOME/profiles/node_modules` (one link per
+ * package the installation's app and bundles depend on — a symlink to the
+ * installation, or a materialized real directory for packages inside a
+ * packaged executable's virtual filesystem) makes every in-box plugin
+ * Node-resolvable from any profile through the ordinary parent-walk.
  * @module @deepseek-ai/dsh-app-boot/profile
  */
 
 import { createRequire } from 'node:module'
 import {
-  existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, symlinkSync, unlinkSync, writeFileSync,
+  existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, renameSync, rmSync, statSync,
+  symlinkSync, unlinkSync, writeFileSync,
 } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
@@ -66,6 +69,8 @@ export interface ProfileManifest {
   name?: string
   dependencies?: Record<string, string>
   peerDependencies?: Record<string, string>
+  /** Optional platform loader packages (sharp, koffi) that exist in the packaged closure. */
+  optionalDependencies?: Record<string, string>
   dsh?: DshManifestSection
 }
 
@@ -201,6 +206,103 @@ function ensureSymlink(link: string, target: string): void {
   }
 }
 
+/** pkg `--sea` VFS root: packages inside a packaged executable live under this prefix on a virtual filesystem. */
+const PKG_SNAPSHOT_PREFIX = '/snapshot/'
+
+/** The stamp file recording which VFS targets this heal materialized, beside the links themselves. */
+const MATERIALIZATION_STAMP_FILENAME = '.dsh-materialized.json'
+
+/** Whether the target path points into a packaged executable's virtual filesystem. */
+export function isPackagedVfsPath(path: string): boolean {
+  return path.startsWith(PKG_SNAPSHOT_PREFIX)
+}
+
+/** Read the materialization stamps; an absent or unreadable file is an empty map (a fresh heal re-materializes). */
+function readMaterializationStamps(modulesDir: string): Map<string, string> {
+  try {
+    const raw = JSON.parse(readFileSync(join(modulesDir, MATERIALIZATION_STAMP_FILENAME), 'utf8')) as unknown
+    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return new Map()
+    return new Map(Object.entries(raw as Record<string, unknown>).filter((entry): entry is [string, string] => typeof entry[1] === 'string'))
+  } catch {
+    return new Map()
+  }
+}
+
+/** Persist the materialization stamps (write-then-rename keeps the file readable under concurrent heals). */
+function writeMaterializationStamps(modulesDir: string, stamps: Map<string, string>): void {
+  if (stamps.size === 0) return
+  const path = join(modulesDir, MATERIALIZATION_STAMP_FILENAME)
+  const temp = `${path}.tmp-${process.pid}`
+  writeFileSync(temp, `${JSON.stringify(Object.fromEntries(stamps), null, 2)}\n`)
+  try {
+    renameSync(temp, path)
+  } catch {
+    /* v8 ignore next 2 -- a concurrent heal writing the identical stamps wins; the rename race is not deterministically stageable */
+    rmSync(temp, { force: true })
+  }
+}
+
+/**
+ * The stamp a materialized package records: its VFS target plus the running
+ * executable's size and mtime, so an upgraded executable re-materializes.
+ */
+function packagedExecutableStamp(target: string): string {
+  const executableStat = statSync(process.execPath)
+  return `${target}@${executableStat.size}:${String(executableStat.mtimeMs)}`
+}
+
+/**
+ * Materialize one VFS-resident package as a real directory at `link`, stamped
+ * by its VFS target and the running executable's identity. Node's module
+ * resolution cannot follow a symlink whose target is inside the packaged VFS,
+ * so the fallback for packaged installations copies package bytes to disk
+ * instead; a link whose stamp matches an existing directory is a no-op.
+ * @param link - the real filesystem path the package must resolve from.
+ * @param target - the VFS source directory.
+ * @param stamps - the link path → materialization stamp map persisted by the heal.
+ */
+export function materializePackageLink(link: string, target: string, stamps: Map<string, string>): void {
+  const stamp = packagedExecutableStamp(target)
+  if (stamps.get(link) === stamp) {
+    try {
+      if (lstatSync(link).isDirectory()) return
+    } catch {
+      // Fall through: the stamped directory vanished, so copy it again.
+    }
+  }
+  rmSync(link, { recursive: true, force: true })
+  const temp = `${link}.tmp-${process.pid}`
+  rmSync(temp, { recursive: true, force: true })
+  copyTree(target, temp)
+  try {
+    renameSync(temp, link)
+  } catch (error) {
+    // Concurrent launches materialize the same directory; losing the rename
+    // race is success, anything else is not.
+    /* v8 ignore next 3 -- the two-process rename race is not deterministically stageable */
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST' && (error as NodeJS.ErrnoException).code !== 'ENOTEMPTY') throw error
+    rmSync(temp, { recursive: true, force: true })
+  }
+  stamps.set(link, stamp)
+}
+
+/**
+ * Recursive byte copy through the patched fs primitives. The packaged
+ * executable's VFS overrides readdirSync/readFileSync/writeFileSync, so a
+ * source inside it is readable here; `cpSync` reaches unpatched internals and
+ * cannot see VFS files at all.
+ * @param source - the directory or file to copy (a real path or a packaged-VFS path).
+ * @param destination - the real filesystem path to write.
+ */
+function copyTree(source: string, destination: string): void {
+  if (lstatSync(source).isDirectory()) {
+    mkdirSync(destination, { recursive: true })
+    for (const name of readdirSync(source)) copyTree(join(source, name), join(destination, name))
+    return
+  }
+  writeFileSync(destination, readFileSync(source))
+}
+
 /**
  * Maintain the flat module fallback `$DSH_HOME/profiles/node_modules`: one
  * symlink per package in the dsh app's resolvable dependency CLOSURE (BFS
@@ -216,7 +318,12 @@ function ensureSymlink(link: string, target: string): void {
  * symlink-following), so each package needs only its one flat link.
  * Idempotent: correct links are kept and moved installations are
  * re-pointed; a stale link to a vanished package stays until its name is
- * reused (dangling links are invisible to resolution).
+ * reused (dangling links are invisible to resolution). A target inside a
+ * packaged executable's virtual filesystem (`/snapshot/`, the `@yao-pkg/pkg
+ * --sea` route) cannot be a symlink: Node's resolution does not follow real
+ * paths into the VFS, so the heal materializes such packages as real
+ * directories instead, idempotently stamped by their VFS target and the
+ * running executable's identity (an upgraded executable re-materializes).
  * @param installAnchor - absolute path of the dsh app's package.json.
  * @param home - the Harness home; defaults to {@link resolveDshHome}.
  */
@@ -234,9 +341,16 @@ export function healProfilesModuleFallback(installAnchor: string, home: string =
   for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
     // Peer dependencies participate: Service Definition packages (dsh-subprocess,
     // dsh-compaction, ...) are peers of their implementations, never plain
-    // dependencies, yet out-of-tree plugins import them directly.
+    // dependencies, yet out-of-tree plugins import them directly. Optional
+    // platform loader packages (sharp, koffi) participate too: they exist in
+    // the packaged closure but are never plain dependencies.
     /* v8 ignore next -- a real app manifest always declares dependencies */
-    for (const dep of [...Object.keys(next.manifest.dependencies ?? {}), ...Object.keys(next.manifest.peerDependencies ?? {})]) {
+    const declared = [
+      ...Object.keys(next.manifest.dependencies ?? {}),
+      ...Object.keys(next.manifest.peerDependencies ?? {}),
+      ...Object.keys(next.manifest.optionalDependencies ?? {}),
+    ]
+    for (const dep of declared) {
       if (links.has(dep)) continue
       const dir = packageDirFromAnchor(next.anchor, dep)
       // A declared-but-uninstalled dependency cannot be a loader-visible
@@ -247,11 +361,21 @@ export function healProfilesModuleFallback(installAnchor: string, home: string =
       queue.push({ anchor: manifestPath, manifest: JSON.parse(readFileSync(manifestPath, 'utf8')) as ProfileManifest })
     }
   }
+  const stamps = readMaterializationStamps(modulesDir)
   for (const [packageName, target] of links) {
     const link = join(modulesDir, packageName)
     mkdirSync(dirname(link), { recursive: true })
-    ensureSymlink(link, target)
+    if (isPackagedVfsPath(target)) {
+      materializePackageLink(link, target, stamps)
+    } else {
+      // A directory materialized by a packaged run becomes a symlink again
+      // when this installation's target lives on the real filesystem; a
+      // foreign unstamped directory still fails loud in ensureSymlink.
+      if (stamps.delete(link)) rmSync(link, { recursive: true, force: true })
+      ensureSymlink(link, target)
+    }
   }
+  writeMaterializationStamps(modulesDir, stamps)
 }
 
 /**

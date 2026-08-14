@@ -14,13 +14,13 @@ DeepSeek Harness Web GUI 在浏览器中运行，但桌面用户想要一个自�
 
 webview 是纯浏览器表面：壳不注册任何 Tauri command、plugin 或 capability，因此 GUI 的 HTTP/WebSocket 传输与 `window.__DSH_BOOT__` 注入行为与浏览器中完全一致。`desktop/ui/` 下的占位页在服务端启动期间显示，并报告启动失败或意外退出。
 
-服务端命令按以下顺序解析：`DSH_DESKTOP_SERVER`（按空白拆分的命令词）；开发构建则 spawn 检出仓库中已构建的 CLI（`node apps/cli/lib/bin.js web --port 0`，工作目录为仓库根，编译期由 `CARGO_MANIFEST_DIR` 固定）；打包构建优先使用 app 资源内内置的单文件 `dsh` 可执行，回退到 `PATH` 中的 `dsh`。每条退出路径都会停止子进程——窗口关闭（即退出应用）、Tauri 退出事件，以及处理 SIGINT/SIGTERM 的 `ctrlc` handler——先 SIGTERM，3 秒宽限期后 SIGKILL。
+服务端命令按以下顺序解析：`DSH_DESKTOP_SERVER`（按空白拆分的命令词）；开发构建则 spawn 检出仓库中已构建的 CLI（`node apps/cli/lib/bin.js web --port 0`，工作目录为仓库根，编译期由 `CARGO_MANIFEST_DIR` 固定）；打包构建优先使用 app 资源内内置的单文件 `dsh` 可执行，回退到 `PATH` 中的 `dsh`。服务端运行在独立进程组中；每条退出路径——窗口关闭（即退出应用）、Tauri 退出事件，以及处理 SIGINT/SIGTERM 的 `ctrlc` handler——都会向整个进程组发 SIGTERM，3 秒宽限期后 SIGKILL。
 
 ### 内置服务端：单文件 exe 路线 + 打包 VFS 的 heal 适配
 
-打包构建把服务端带进 app bundle：`desktop/runtime/package.json`（`dsh-desktop-pkg`，纯依赖 deploy root，镜像 `dsh` CLI 的依赖闭包并补齐所有必需 workspace peer）输入 [`scripts/build-exe-for-desktop-shell.ts`](../../scripts/build-exe-for-desktop-shell.ts)：部署闭包 → 以 `@yao-pkg/pkg --sea` 打包（路线由[单文件可执行 Agent Note](2026-07-10-single-file-executable-sdk-runtime-distribution.md) 持有）→ 把 `dsh` 与 node-pty 的 `dsh-spawn-helper` 写入 `desktop/src-tauri/resources/` 供 `bundle.resources` 打包。deploy 清单显式钉住 legacy deploy 会从 optional dependencies 中丢掉的平台 loader 包（`@img/sharp-darwin-arm64`、`@img/sharp-darwin-x64`；`@koromix/koffi-darwin-arm64` 经传递依赖到达）。
+打包构建把服务端带进 app bundle：`desktop/runtime/package.json`（`dsh-desktop-pkg`，纯依赖 deploy root，镜像 `dsh` CLI 的依赖闭包并补齐所有必需 workspace peer）输入 [`scripts/build-exe-for-desktop-shell.ts`](../../scripts/build-exe-for-desktop-shell.ts)：部署闭包 → 以 `@yao-pkg/pkg --sea` 打包（路线由[单文件可执行 Agent Note](2026-07-10-single-file-executable-sdk-runtime-distribution.md) 持有）→ 把 `dsh` 与 node-pty 的 `dsh-spawn-helper` 写入 `desktop/src-tauri/resources/` 供 `bundle.resources` 打包。deploy 清单显式钉住 legacy deploy 会从 optional dependencies 中丢掉的平台 loader 包（`@img/sharp-darwin-arm64`、`@img/sharp-darwin-x64`）；koffi 的 darwin 预编译产物由其 staging postinstall 生成。
 
-dsh CLI 的 profile 回退会把 `$DSH_HOME/profiles/node_modules` 软链到安装目录；在 exe 内这些软链指向 `/snapshot` VFS 路径，而 Node 的 ESM 解析器在内核层跟随软链时 VFS 并不存在。因此构建脚本改为对 staged `dsh-app-boot` bundle 打补丁：heal 循环实体化为真实目录（以可执行文件的 size 与 mtime 做标记，仅当 exe 变化时重建回退目录），闭包 BFS 额外遍历 `optionalDependencies`。锚点被断言，上游漂移会直接失败构建。后果：首次启动会把闭包拷贝进 Harness home（数百 MB），此后仓库源码运行 `dsh` 会因该目录不是软链而报错，删除后恢复。
+dsh CLI 的 profile 回退会把 `$DSH_HOME/profiles/node_modules` 软链到安装目录；在 exe 内这些软链指向 `/snapshot` VFS 路径，而 Node 的 ESM 解析器在内核层跟随软链时 VFS 并不存在。`dsh-app-boot` 的 heal 原生处理打包场景：VFS 内的包实体化为真实目录，stamp 记录 VFS 目标加上运行中可执行文件的 size 与 mtime（升级后的可执行文件会重新实体化，而不是信任过期拷贝），闭包 BFS 遍历 `optionalDependencies`，让平台 loader 包对 out-of-tree 插件可解析。此后的源码运行会在自己的 heal 中把实体化目录转回软链。后果：首次启动会把闭包拷贝进 Harness home（数百 MB）。
 
 ## Alternatives considered
 
