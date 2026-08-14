@@ -771,9 +771,11 @@ function entryFromFs(entry: FsDirEntry): SkillRootEntry {
 }
 
 async function listSkillRootEntriesFromNode(root: SkillRoot, ctx: Context): Promise<SkillRootEntry[]> {
-  let entries
+  let names
   try {
-    entries = await readdir(root.path, { withFileTypes: true, encoding: 'utf8' })
+    // Names only: the packaged executable's VFS readdir returns withFileTypes
+    // entries whose Dirent methods are missing; kind comes from lstat below.
+    names = await readdir(root.path)
   } catch (error) {
     /* v8 ignore else -- Native non-absence directory failures are provider-dependent; the ctx.fs path pins incomplete discovery. */
     if (isAbsentSkillPathError(error)) return []
@@ -782,10 +784,10 @@ async function listSkillRootEntriesFromNode(root: SkillRoot, ctx: Context): Prom
   }
 
   const result: SkillRootEntry[] = []
-  for (const entry of entries) {
-    const path = join(root.path, entry.name)
-    const type = await nodeEntryKind(path, entry, ctx)
-    result.push({ name: entry.name, type: type ?? 'other', path })
+  for (const name of names) {
+    const path = join(root.path, name)
+    const type = await nodeEntryKind(path, ctx)
+    result.push({ name, type: type ?? 'other', path })
   }
   return result
 }
@@ -888,16 +890,25 @@ function fsReadErrorMessage(target: FsTarget, error: unknown): string {
   return `failed to read text file at ${target.displayPath}: ${errorMessage(error)}`
 }
 
-async function nodeEntryKind(fullPath: string, entry: { isDirectory(): boolean; isFile(): boolean; isSymbolicLink(): boolean }, ctx: Context): Promise<'directory' | 'file' | undefined> {
-  if (entry.isDirectory()) return 'directory'
-  if (entry.isFile()) return 'file'
-  /* v8 ignore next -- Non-file directory entries such as FIFOs are platform-specific and intentionally skipped. */
-  if (!entry.isSymbolicLink()) return undefined
+async function nodeEntryKind(fullPath: string, ctx: Context): Promise<'directory' | 'file' | undefined> {
+  let info
   try {
-    const info = await stat(fullPath)
-    if (info.isDirectory()) return 'directory'
+    // lstat keeps the previous Dirent checks' no-follow semantics, and its
+    // Stats methods exist on every filesystem the packaged VFS included.
+    info = await lstat(fullPath)
+  } catch {
+    // Vanished between listing and stat: nothing usable occupies the path.
+    return undefined
+  }
+  if (info.isDirectory()) return 'directory'
+  if (info.isFile()) return 'file'
+  /* v8 ignore next -- Non-file directory entries such as FIFOs are platform-specific and intentionally skipped. */
+  if (!info.isSymbolicLink()) return undefined
+  try {
+    const followed = await stat(fullPath)
+    if (followed.isDirectory()) return 'directory'
     /* v8 ignore else -- the special-file symlink branch relies on POSIX /dev/null. */
-    if (info.isFile()) return 'file'
+    if (followed.isFile()) return 'file'
     /* v8 ignore next -- The special-file symlink fixture relies on POSIX /dev/null. */
     return undefined
   } catch (error) {

@@ -83,4 +83,4 @@ exe 内支持 `dsh-workflow-worker-thread` 与 `dsh-code-runtime-worker-thread`�
 
 **买到的**：目标平台零依赖的单文件分发；插件语义与源码运行严格一致（同一棵真实包树，无转译、无注册表）；对外服务接口、插件集与配置全部收敛到 `cordis.yml` 和一份依赖 manifest 这两个真源；exe 与 `node` 双载体使用同一棵树和相同语义，开发验证无需等待打包；官方 Node 二进制消除了补丁版二进制的供应链顾虑。
 
-**付出的**：产物约 174MB，且源码原样进入 blob（没有字节码混淆；闭源分发诉求需要另行评估）；pkg 的 VFS/模块钩子层仍由社区维护（构建脚本钉死 `@yao-pkg/pkg@6.21.0`，升级需要显式改动）；`--sea` 每个构建目标调用一次（与 CI 每个平台一个任务相匹配，本地多平台构建串行执行）。
+**付出的**：产物约 174MB，且源码原样进入 blob（没有字节码混淆；闭源分发诉求需要另行评估）；pkg 的 VFS/模块钩子层仍由社区维护（构建脚本钉死 `@yao-pkg/pkg@6.21.0`，升级需要显式改动）；`--sea` 每个构建目标调用一次（与 CI 每个平台一个任务相匹配，本地多平台构建串行执行）；VFS 的 `readdir`/`readdirSync` 在 `withFileTypes` 模式下返回的条目缺少 Dirent 方法，触及 VFS 的发现逻辑须改为读名字后逐个 `lstat`（`dsh-agent-presets` discovery 与 `dsh-skill-filesystem` listing）。
