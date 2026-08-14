@@ -195,9 +195,10 @@ function runInstaller(
   fixture: Fixture,
   root: string,
   extraEnv: NodeJS.ProcessEnv = {},
+  scriptPath: string = installer,
 ): Promise<CommandResult> {
   return new Promise((resolveResult, reject) => {
-    const child = spawn(process.execPath, [installer], {
+    const child = spawn(process.execPath, [scriptPath], {
       cwd: root,
       env: { ...fixture.env, ...extraEnv },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -239,6 +240,21 @@ describe('worktree-local Lefthook installer', { timeout: 15_000 }, () => {
       ]).status).toBe(1)
     })
   }
+
+  it('skips cleanly when the lefthook package is not installed (a production install)', async () => {
+    const fixture = createFixture()
+    // An isolated copy cannot resolve the lefthook devDependency through the
+    // repository node_modules, like pnpm's `--production` deps-status check.
+    const isolatedInstaller = join(fixture.container, 'install-lefthook.mjs')
+    write(isolatedInstaller, readFileSync(installer, 'utf8'))
+
+    const result = await runInstaller(fixture, fixture.main, {}, isolatedInstaller)
+
+    expect(result.status, result.stderr).toBe(0)
+    expect(gitResult(fixture, fixture.main, ['config', '--get', 'core.hooksPath']).status).toBe(1)
+    expect(existsSync(hooksPath(fixture, fixture.main))).toBe(false)
+    expect(existsSync(join(commonDirectory(fixture), 'config.worktree'))).toBe(false)
+  })
 
   it('isolates main and linked worktrees without changing legacy common hooks', async () => {
     const fixture = createFixture()
