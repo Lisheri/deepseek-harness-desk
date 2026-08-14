@@ -291,10 +291,13 @@ class SingleExeBuild {
    * Node's ESM resolver follows `$DSH_HOME/profiles/node_modules` symlinks at
    * the kernel level, where `/snapshot` does not exist, so the installation
    * fallback inside the single-file exe must materialize real directories
-   * instead of links. The patch replaces the heal loop with a marker-guarded
-   * copy: the marker records the executable's size and mtime, so the fallback
-   * is rebuilt only when the exe itself changes. The anchor strings fail the
-   * build loudly when the upstream app-boot bundle drifts.
+   * instead of links. Upstream app-boot already materializes VFS targets
+   * idempotently, stamped by their VFS path — but that stamp survives app
+   * upgrades (the VFS path never changes), so the patch replaces the heal
+   * loop with a marker-guarded copy: the marker records the executable's size
+   * and mtime, so the fallback is rebuilt when the exe itself changes. The
+   * anchor strings fail the build loudly when the upstream app-boot bundle
+   * drifts.
    */
   private async adaptProfileHeal(): Promise<void> {
     if (this.cli.dryRun) {
@@ -317,15 +320,15 @@ class SingleExeBuild {
       )
     }
     let source = await readFile(appBoot, 'utf8')
-    const importAnchor = 'import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";'
-    const importPatch = 'import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, symlinkSync, unlinkSync, writeFileSync, readdirSync as __dshDesktopReaddir, rmSync as __dshDesktopRm, statSync as __dshDesktopStat } from "node:fs";'
+    const importAnchor = 'import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";'
+    const importPatch = 'import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync, readdirSync as __dshDesktopReaddir, statSync as __dshDesktopStat } from "node:fs";'
     // Each patch is idempotent: a staging tree that already carries it (a
     // previous run's leftovers) stays valid instead of failing the anchor check.
     if (source.includes(importAnchor)) source = source.replace(importAnchor, importPatch)
     else if (!source.includes(importPatch)) {
       throw new Error(`build-exe-for-desktop-shell: app-boot fs import anchor missing at ${appBoot}; the heal adaptation drifted from upstream.`)
     }
-    const loopAnchor = '\tfor (const [packageName, target] of links) {\n\t\tconst link = join(modulesDir, packageName);\n\t\tmkdirSync(dirname(link), { recursive: true });\n\t\tensureSymlink(link, target);\n\t}'
+    const loopAnchor = '\tfor (const [packageName, target] of links) {\n\t\tconst link = join(modulesDir, packageName);\n\t\tmkdirSync(dirname(link), { recursive: true });\n\t\tif (isPackagedVfsPath(target)) materializePackageLink(link, target, stamps);\n\t\telse ensureSymlink(link, target);\n\t}'
     // Materialized real directories must also cover optional platform loader
     // packages (sharp, koffi): the BFS walks dependencies and peers only.
     const bfsAnchor = '\tfor (const dep of [...Object.keys(next.manifest.dependencies ?? {}), ...Object.keys(next.manifest.peerDependencies ?? {})]) {'
@@ -349,7 +352,10 @@ class SingleExeBuild {
 \t} catch {
 \t}
 \tif (!materialized) {
-\t\t__dshDesktopRm(modulesDir, { recursive: true, force: true });
+\t\t// A non-desktop packaged exe may have left VFS-target stamps here; the
+\t\t// wipe invalidates them, so stale entries are not rewritten below.
+\t\tstamps.clear();
+\t\trmSync(modulesDir, { recursive: true, force: true });
 \t\tmkdirSync(modulesDir, { recursive: true });
 \t\tfor (const [packageName, target] of links) {
 \t\t\t__dshDesktopCopyTree(target, join(modulesDir, packageName));
