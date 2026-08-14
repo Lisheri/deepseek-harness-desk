@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The shell exposes no Tauri IPC to the webview: the harness GUI talks to the managed dsh web server over HTTP/WebSocket only.",
+  "windows": ["main"],
+  "permissions": []
+}
