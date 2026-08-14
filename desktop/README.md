@@ -8,6 +8,8 @@ A Tauri desktop shell hosting the [DeepSeek Harness Web GUI](../packages/bundle/
 
 - `src-tauri/` — the Rust shell. It starts the server, waits for readiness, loads the GUI URL in the window, and stops the server on exit.
 - `ui/` — a placeholder page shown while the server starts; the harness GUI replaces it on readiness.
+- `runtime/` — a dependency-only deploy root manifest whose closure becomes the bundled single-file `dsh` executable.
+- `src-tauri/resources/` — the build products: the single-file `dsh` executable plus the node-pty `dsh-spawn-helper`, bundled into the app via `bundle.resources`.
 
 The webview is a plain browser surface: the shell exposes no Tauri IPC, and the GUI talks to the server over HTTP/WebSocket exactly as it does in a browser.
 
@@ -19,13 +21,14 @@ Server command resolution, in order:
 
 1. `DSH_DESKTOP_SERVER` environment variable — whitespace-split command words.
 2. Development builds — the checkout's built CLI: `node apps/cli/lib/bin.js web --port 0`, working directory the repository root.
-3. Packaged builds — `dsh web --port 0` resolved from `PATH`, working directory `$HOME`.
+3. Packaged builds — the bundled `dsh` executable from the app resources, working directory `$HOME`.
+4. Packaged builds without a bundled executable — `dsh web --port 0` resolved from `PATH`, working directory `$HOME`.
 
 ## Prerequisites
 
 - A Rust toolchain (rustc 1.77 or newer) and the Tauri CLI: `cargo install tauri-cli --locked`.
 - Development runs need a built checkout (`pnpm install && pnpm run build`); the dev shell spawns `apps/cli/lib/bin.js`.
-- Packaged builds need `dsh` on `PATH` — the shell does not bundle a Node runtime.
+- Packaged builds need a built checkout plus network access for the single-file build ([`scripts/build-exe-for-desktop-shell.ts`](../../scripts/build-exe-for-desktop-shell.ts) downloads the Node base and `@yao-pkg/pkg`).
 
 ## Run
 
@@ -39,14 +42,18 @@ The window opens on the placeholder page and switches to the GUI once the server
 ## Build
 
 ```sh
-cd desktop && cargo tauri build
-# or from the repository root: pnpm run desktop:build
+# from the repository root: builds the single-file dsh, then the app + dmg
+pnpm run desktop:build
 ```
 
-Output: `src-tauri/target/release/bundle/macos/DeepSeek Harness.app`. The bundle is unsigned and runs locally.
+The single-file build alone is `pnpm run desktop:exe` (flags: `--targets=node24-macos-arm64,node24-macos-x64`, `--skip-build`, `--dry-run`).
+
+Output: `src-tauri/target/release/bundle/macos/DeepSeek Harness.app` and `src-tauri/target/release/bundle/dmg/DeepSeek Harness_<version>_aarch64.dmg`. Both are unsigned and run locally; the app carries its own server, so no separate `dsh` installation is needed.
 
 ## Known Limitations and Deferred Work
 
-- Packaged builds require `dsh` on `PATH`: bundling the harness CLI plus a Node runtime into the app bundle is deferred.
-- The shell kills the spawned process, not its process group; a `DSH_DESKTOP_SERVER` pipeline may leave children behind. A SIGKILL of the shell (Force Quit) skips every shutdown path and orphans the server.
+- The server runs in its own process group and shutdown signals the whole group; a SIGKILL of the shell (Force Quit) still skips every shutdown path and orphans the server.
 - macOS is the verified target; the Windows and Linux webview backends are untested.
+- The bundled `dsh` executable is an unsigned nested binary: signing and notarizing the app for Gatekeeper-less distribution must sign it alongside the app bundle.
+- API credentials: Finder-launched apps do not inherit shell environment variables; set `DEEPSEEK_API_KEY` through the GUI's credentials plane instead.
+- First launch materializes the closure into `$DSH_HOME/profiles/node_modules` (a few hundred MB); afterwards, source-checkout `dsh` runs fail on that non-symlink directory — delete it to restore.

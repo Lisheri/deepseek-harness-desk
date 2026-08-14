@@ -16,6 +16,9 @@ use std::time::{Duration, Instant};
 
 use tauri::{Manager, RunEvent, WindowEvent};
 
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
+
 /// The readiness line prefix the web profile prints once the server is up.
 const READY_LINE_PREFIX: &str = "dsh web: http://";
 /// How long the shell waits for the readiness line before giving up.
@@ -53,9 +56,11 @@ fn repo_root() -> PathBuf {
 ///
 /// Order: `DSH_DESKTOP_SERVER` (whitespace-split command words) overrides
 /// everything; dev builds default to the checkout's built CLI
-/// (`node apps/cli/lib/bin.js web --port 0`); packaged builds default to
-/// `dsh web --port 0` resolved from PATH.
-fn server_command() -> Result<(Command, PathBuf), String> {
+/// (`node apps/cli/lib/bin.js web --port 0`); packaged builds prefer the
+/// bundled single-file `dsh` executable from the app resources (built by
+/// scripts/build-exe-for-desktop-shell.ts) and fall back to `dsh` on PATH.
+/// @param resources - the Tauri resource directory (`Contents/Resources` in the bundle).
+fn server_command(resources: Option<PathBuf>) -> Result<(Command, PathBuf), String> {
     if let Ok(custom) = std::env::var("DSH_DESKTOP_SERVER") {
         let mut words = custom.split_whitespace();
         let program = words
@@ -68,6 +73,7 @@ fn server_command() -> Result<(Command, PathBuf), String> {
     }
     #[cfg(dev)]
     {
+        let _ = &resources; // dev builds ignore the bundled executable
         let cli = repo_root().join("apps/cli/lib/bin.js");
         let mut cmd = Command::new("node");
         cmd.arg(&cli).args(["web", "--port", "0"]);
@@ -75,11 +81,18 @@ fn server_command() -> Result<(Command, PathBuf), String> {
     }
     #[cfg(not(dev))]
     {
-        let mut cmd = Command::new("dsh");
-        cmd.args(["web", "--port", "0"]);
         let cwd = std::env::var("HOME")
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from("/"));
+        if let Some(exe) = resources.map(|dir| dir.join("dsh")) {
+            if exe.is_file() {
+                let mut cmd = Command::new(&exe);
+                cmd.args(["web", "--port", "0"]);
+                return Ok((cmd, cwd));
+            }
+        }
+        let mut cmd = Command::new("dsh");
+        cmd.args(["web", "--port", "0"]);
         return Ok((cmd, cwd));
     }
 }
@@ -96,12 +109,19 @@ fn parse_ready_url(line: &str) -> Option<String> {
 
 /// Spawn the server, wait for its readiness line, and return the Web URL.
 /// On failure the child is reaped and the reason is returned.
-fn spawn_server(state: &ServerState) -> Result<String, String> {
-    let (mut cmd, cwd) = server_command()?;
-    let mut child = cmd
+/// @param resources - the Tauri resource directory passed to {@link server_command}.
+fn spawn_server(state: &ServerState, resources: Option<PathBuf>) -> Result<String, String> {
+    let (mut cmd, cwd) = server_command(resources)?;
+    let child = cmd
         .current_dir(&cwd)
         .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
+        .stderr(Stdio::inherit());
+    // The server runs in its own process group: the shell stays its sole
+    // controller, terminal signals reach it only through the shell's cleanup,
+    // and one group signal stops a DSH_DESKTOP_SERVER pipeline as a whole.
+    #[cfg(unix)]
+    child.process_group(0);
+    let mut child = child
         .spawn()
         .map_err(|error| format!("failed to start dsh web: {error}"))?;
     let stdout = child
@@ -147,10 +167,21 @@ fn spawn_server(state: &ServerState) -> Result<String, String> {
     ))
 }
 
-/// Ask the server to shut down: SIGTERM (unix), then SIGKILL after a grace period.
+/// Ask the server's process group to shut down with a signal.
+/// The child runs in its own process group (see {@link spawn_server}), so one
+/// signal reaches a `DSH_DESKTOP_SERVER` pipeline, not just the direct child.
+#[cfg(unix)]
+fn signal_group(child: &mut Child, signal: &str) {
+    let _ = Command::new("kill")
+        .args([format!("-{signal}"), format!("-{}", child.id())])
+        .status();
+}
+
+/// Ask the server to shut down: SIGTERM to the process group (unix), then
+/// SIGKILL after a grace period.
 #[cfg(unix)]
 fn terminate(child: &mut Child) {
-    let _ = Command::new("kill").arg(child.id().to_string()).status();
+    signal_group(child, "TERM");
 }
 
 /// Ask the server to shut down (non-unix: straight kill).
@@ -175,6 +206,9 @@ fn kill_server(state: &ServerState) {
             Ok(Some(_)) => break,
             Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(50)),
             _ => {
+                #[cfg(unix)]
+                signal_group(&mut child, "KILL");
+                #[cfg(not(unix))]
                 let _ = child.kill();
                 let _ = child.wait();
                 break;
@@ -199,12 +233,13 @@ pub fn run() {
         .manage(state)
         .setup(|app| {
             let handle = app.handle().clone();
+            let resources = app.path().resource_dir().ok();
             thread::spawn(move || {
                 let state = handle.state::<Arc<ServerState>>();
                 let window = handle
                     .get_webview_window("main")
                     .expect("main window declared in tauri.conf.json");
-                match spawn_server(&state) {
+                match spawn_server(&state, resources) {
                     Ok(url) => {
                         let script = format!(
                             "window.location.replace({});",
