@@ -5,9 +5,10 @@
 //! for the readiness line the web profile prints (`dsh web: http://127.0.0.1:<port>`),
 //! navigates the webview to that URL, and kills the child when the app exits.
 //! The window runs a custom overlay titlebar (the web GUI draws the chrome row
-//! with `data-tauri-drag-region`); the shell contributes the Chinese native
-//! menu bar (文件 with 新聊天 / 添加新工作区, 编辑, 窗口) and forwards those two
-//! file actions to the webview as `desktop-menu` events — the only IPC edge.
+//! with `data-tauri-drag-region`); the shell contributes the fully-Chinese
+//! native menu bar (应用 / 文件 / 编辑 / 窗口, every item explicitly labeled)
+//! and forwards the two 文件 actions to the webview as `desktop-menu` events —
+//! the only IPC edge.
 
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
@@ -17,7 +18,7 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use tauri::menu::{Menu, MenuItemBuilder, SubmenuBuilder};
+use tauri::menu::{Menu, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
 use tauri::{Emitter, Manager, RunEvent, WindowEvent};
 
 #[cfg(unix)]
@@ -36,9 +37,11 @@ const MENU_ADD_WORKSPACE: &str = "add-workspace";
 /// The event name the 文件 menu forwards its actions under.
 const DESKTOP_MENU_EVENT: &str = "desktop-menu";
 
-/// Build the Chinese native menu bar. The two 文件 actions carry ids the
-/// shell forwards to the webview; the 编辑/窗口 items are predefined roles
-/// (OS-localized behavior: Cmd+Z/C/V, minimize, close, …).
+/// Build the fully-Chinese native menu bar. The two 文件 actions carry ids
+/// the shell forwards to the webview; every other item is a predefined role
+/// with an explicit Chinese label override, so the native behaviors
+/// (Cmd+Z/C/V accelerators, minimize, hide, quit, the About panel) survive
+/// while the labels no longer follow the OS language.
 fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let new_chat = MenuItemBuilder::with_id(MENU_NEW_CHAT, "新聊天")
         .accelerator("CmdOrCtrl+N")
@@ -50,34 +53,40 @@ fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         .item(&new_chat)
         .item(&add_workspace)
         .build()?;
+
     let edit_menu = SubmenuBuilder::new(app, "编辑")
-        .undo()
-        .redo()
+        .item(&PredefinedMenuItem::undo(app, Some("撤销"))?)
+        .item(&PredefinedMenuItem::redo(app, Some("重做"))?)
         .separator()
-        .cut()
-        .copy()
-        .paste()
-        .select_all()
+        .item(&PredefinedMenuItem::cut(app, Some("剪切"))?)
+        .item(&PredefinedMenuItem::copy(app, Some("拷贝"))?)
+        .item(&PredefinedMenuItem::paste(app, Some("粘贴"))?)
+        .item(&PredefinedMenuItem::select_all(app, Some("全选"))?)
         .build()?;
+
     let window_menu = SubmenuBuilder::new(app, "窗口")
-        .minimize()
-        .maximize()
+        .item(&PredefinedMenuItem::minimize(app, Some("最小化"))?)
+        .item(&PredefinedMenuItem::maximize(app, Some("缩放"))?)
         .separator()
-        .close_window()
+        .item(&PredefinedMenuItem::close_window(app, Some("关闭窗口"))?)
         .build()?;
 
     #[cfg(target_os = "macos")]
     {
         let app_menu = SubmenuBuilder::new(app, "DeepSeek Harness")
-            .about(Some(tauri::menu::AboutMetadata::default()))
+            .item(&PredefinedMenuItem::about(
+                app,
+                Some("关于 DeepSeek Harness"),
+                Some(tauri::menu::AboutMetadata::default()),
+            )?)
             .separator()
-            .services()
+            .item(&PredefinedMenuItem::services(app, Some("服务"))?)
             .separator()
-            .hide()
-            .hide_others()
-            .show_all()
+            .item(&PredefinedMenuItem::hide(app, Some("隐藏 DeepSeek Harness"))?)
+            .item(&PredefinedMenuItem::hide_others(app, Some("隐藏其他"))?)
+            .item(&PredefinedMenuItem::show_all(app, Some("全部显示"))?)
             .separator()
-            .quit()
+            .item(&PredefinedMenuItem::quit(app, Some("退出 DeepSeek Harness"))?)
             .build()?;
         tauri::menu::MenuBuilder::new(app)
             .item(&app_menu)

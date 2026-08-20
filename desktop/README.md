@@ -11,7 +11,7 @@ A Tauri desktop shell hosting the [DeepSeek Harness Web GUI](../packages/bundle/
 - `runtime/` — a dependency-only deploy root manifest whose closure becomes the bundled single-file `dsh` executable.
 - `src-tauri/resources/` — the build products: the single-file `dsh` executable plus the node-pty `dsh-spawn-helper`, bundled into the app via `bundle.resources`.
 
-The webview stays browser-grade — the GUI talks to the server over HTTP/WebSocket exactly as it does in a browser — with one desktop-chrome edge: the shell builds a Chinese native menu (文件 → 新聊天 / 添加新工作区, 编辑, 窗口) and forwards those two file actions to the webview as `desktop-menu` events (its only IPC, under the `core:event:default` capability). The window runs an overlay titlebar (`titleBarStyle: Overlay`, `hiddenTitle`); the GUI draws the chrome row itself — fold, undo/redo, the 文件操作 dropdown, and the `data-tauri-drag-region` drag area — see [ui-titlebar](../packages/client/ui-titlebar/README.md).
+The webview stays browser-grade — the GUI talks to the server over HTTP/WebSocket exactly as it does in a browser — with two desktop-chrome edges: the shell builds a fully-Chinese native menu (应用 / 文件 → 新聊天 / 添加新工作区, 编辑, 窗口 — every item explicitly labeled, native roles kept) and forwards those two file actions to the webview as `desktop-menu` events (its only IPC, under the `core:event:default` capability). The window runs an overlay titlebar (`titleBarStyle: Overlay`, `hiddenTitle`); the GUI draws the chrome row itself — fold, undo/redo, and the `data-tauri-drag-region` drag area (dragging granted via `core:window:allow-start-dragging`) — see [ui-titlebar](../packages/client/ui-titlebar/README.md).
 
 ## Server lifecycle
 

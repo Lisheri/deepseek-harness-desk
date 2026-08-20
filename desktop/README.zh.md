@@ -11,7 +11,7 @@
 - `runtime/` — 纯依赖 deploy-root 清单，其闭包构成内置于应用的 dsh 单文件可执行。
 - `src-tauri/resources/` — 构建产物：单文件 `dsh` 可执行与 node-pty 的 `dsh-spawn-helper`，经 `bundle.resources` 打入 app。
 
-webview 保持浏览器级表面——GUI 与后端之间的 HTTP/WebSocket 通信与浏览器中完全一致——只多一条桌面 chrome 边：壳构建中文原生菜单（文件 → 新聊天 / 添加新工作区、编辑、窗口），并把这两个文件动作以 `desktop-menu` 事件转发给 webview（其唯一 IPC，落在 `core:event:default` capability 下）。窗口使用叠加式标题栏（`titleBarStyle: Overlay`、`hiddenTitle`）；GUI 自行绘制 chrome 行——折叠、撤销/重做、文件操作下拉，以及 `data-tauri-drag-region` 拖拽区——详见 [ui-titlebar](../packages/client/ui-titlebar/README.md)。
+webview 保持浏览器级表面——GUI 与后端之间的 HTTP/WebSocket 通信与浏览器中完全一致——只多两条桌面 chrome 边：壳构建全中文原生菜单（应用 / 文件 → 新聊天 / 添加新工作区、编辑、窗口——每个条目显式标注中文，保留原生角色行为），并把这两个文件动作以 `desktop-menu` 事件转发给 webview（其唯一 IPC，落在 `core:event:default` capability 下）。窗口使用叠加式标题栏（`titleBarStyle: Overlay`、`hiddenTitle`）；GUI 自行绘制 chrome 行——折叠、撤销/重做，以及 `data-tauri-drag-region` 拖拽区（拖动能力经 `core:window:allow-start-dragging` 授予）——详见 [ui-titlebar](../packages/client/ui-titlebar/README.md)。
 
 ## 服务端生命周期
 

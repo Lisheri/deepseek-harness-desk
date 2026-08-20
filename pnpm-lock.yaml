@@ -646,6 +646,9 @@ importers:
       '@deepseek-ai/dsh-credentials':
         specifier: workspace:^
         version: link:../../packages/credentials/credentials
+      '@deepseek-ai/dsh-file-reference':
+        specifier: workspace:^
+        version: link:../../packages/context/file-reference
       '@deepseek-ai/dsh-file-reference-local':
         specifier: workspace:^
         version: link:../../packages/context/file-reference-local
