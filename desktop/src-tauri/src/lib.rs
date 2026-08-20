@@ -4,7 +4,10 @@
 //! child process on launch (`--port 0`, so the OS assigns a free port), waits
 //! for the readiness line the web profile prints (`dsh web: http://127.0.0.1:<port>`),
 //! navigates the webview to that URL, and kills the child when the app exits.
-//! The webview is a plain browser surface: no Tauri IPC is exposed to it.
+//! The window runs a custom overlay titlebar (the web GUI draws the chrome row
+//! with `data-tauri-drag-region`); the shell contributes the Chinese native
+//! menu bar (文件 with 新聊天 / 添加新工作区, 编辑, 窗口) and forwards those two
+//! file actions to the webview as `desktop-menu` events — the only IPC edge.
 
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
@@ -14,7 +17,8 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use tauri::{Manager, RunEvent, WindowEvent};
+use tauri::menu::{Menu, MenuItemBuilder, SubmenuBuilder};
+use tauri::{Emitter, Manager, RunEvent, WindowEvent};
 
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
@@ -25,6 +29,72 @@ const READY_LINE_PREFIX: &str = "dsh web: http://";
 const READY_TIMEOUT: Duration = Duration::from_secs(60);
 /// Grace period between SIGTERM and SIGKILL when stopping the server.
 const STOP_GRACE: Duration = Duration::from_secs(3);
+
+/// Menu item ids the webview acts on (the `desktop-menu` event payload).
+const MENU_NEW_CHAT: &str = "new-chat";
+const MENU_ADD_WORKSPACE: &str = "add-workspace";
+/// The event name the 文件 menu forwards its actions under.
+const DESKTOP_MENU_EVENT: &str = "desktop-menu";
+
+/// Build the Chinese native menu bar. The two 文件 actions carry ids the
+/// shell forwards to the webview; the 编辑/窗口 items are predefined roles
+/// (OS-localized behavior: Cmd+Z/C/V, minimize, close, …).
+fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
+    let new_chat = MenuItemBuilder::with_id(MENU_NEW_CHAT, "新聊天")
+        .accelerator("CmdOrCtrl+N")
+        .build(app)?;
+    let add_workspace = MenuItemBuilder::with_id(MENU_ADD_WORKSPACE, "添加新工作区")
+        .accelerator("CmdOrCtrl+Shift+N")
+        .build(app)?;
+    let file_menu = SubmenuBuilder::new(app, "文件")
+        .item(&new_chat)
+        .item(&add_workspace)
+        .build()?;
+    let edit_menu = SubmenuBuilder::new(app, "编辑")
+        .undo()
+        .redo()
+        .separator()
+        .cut()
+        .copy()
+        .paste()
+        .select_all()
+        .build()?;
+    let window_menu = SubmenuBuilder::new(app, "窗口")
+        .minimize()
+        .maximize()
+        .separator()
+        .close_window()
+        .build()?;
+
+    #[cfg(target_os = "macos")]
+    {
+        let app_menu = SubmenuBuilder::new(app, "DeepSeek Harness")
+            .about(Some(tauri::menu::AboutMetadata::default()))
+            .separator()
+            .services()
+            .separator()
+            .hide()
+            .hide_others()
+            .show_all()
+            .separator()
+            .quit()
+            .build()?;
+        tauri::menu::MenuBuilder::new(app)
+            .item(&app_menu)
+            .item(&file_menu)
+            .item(&edit_menu)
+            .item(&window_menu)
+            .build()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        tauri::menu::MenuBuilder::new(app)
+            .item(&file_menu)
+            .item(&edit_menu)
+            .item(&window_menu)
+            .build()
+    }
+}
 
 /// Shared server-process state between the run loop and the monitor thread.
 struct ServerState {
@@ -245,6 +315,9 @@ pub fn run() {
     let app = tauri::Builder::default()
         .manage(state)
         .setup(|app| {
+            // Chinese native menu bar; the 文件 actions forward to the webview.
+            let menu = build_menu(app.handle())?;
+            app.set_menu(menu)?;
             let handle = app.handle().clone();
             let resources = app.path().resource_dir().ok();
             thread::spawn(move || {
@@ -297,6 +370,20 @@ pub fn run() {
                 }
             });
             Ok(())
+        })
+        // Forward the 文件 menu's two actions to the webview (the titlebar
+        // plugin listens for `desktop-menu` and runs them through the GUI's
+        // own session/workspace services).
+        .on_menu_event(|app, event| {
+            let action = match event.id().as_ref() {
+                MENU_NEW_CHAT => MENU_NEW_CHAT,
+                MENU_ADD_WORKSPACE => MENU_ADD_WORKSPACE,
+                _ => return,
+            };
+            let Some(window) = app.get_webview_window("main") else {
+                return;
+            };
+            let _ = window.emit(DESKTOP_MENU_EVENT, action);
         })
         .build(tauri::generate_context!())
         .expect("error while building the tauri application");

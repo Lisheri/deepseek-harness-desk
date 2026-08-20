@@ -12,7 +12,7 @@ DeepSeek Harness Web GUI 在浏览器中运行，但桌面用户想要一个自�
 
 新增 `desktop/` 目录，一个位于 pnpm workspace 之外的 Tauri v2 壳。harness 后端保持不变：壳以子进程方式启动 `dsh web --port 0`，解析 web profile 打印的就绪行（`dsh web: http://127.0.0.1:<port>`），随后把窗口导航到该 URL。临时端口意味着并发壳实例与默认端口上的其他服务端永不冲突。
 
-webview 是纯浏览器表面：壳不注册任何 Tauri command、plugin 或 capability，因此 GUI 的 HTTP/WebSocket 传输与 `window.__DSH_BOOT__` 注入行为与浏览器中完全一致。`desktop/ui/` 下的占位页在服务端启动期间显示，并报告启动失败或意外退出。
+webview 保持浏览器级表面：壳不注册任何 Tauri command 或 plugin，因此 GUI 的 HTTP/WebSocket 传输与 `window.__DSH_BOOT__` 注入行为与浏览器中完全一致。唯一的 IPC 边是后来加入的桌面 chrome——中文原生菜单，其"文件"动作由壳以 `desktop-menu` 事件转发，落在 `core:event:default` capability 下；叠加式标题栏则由 GUI 自行绘制（[desktop chrome note](2026-08-25-desktop-chrome-titlebar-menu.md)）。`desktop/ui/` 下的占位页在服务端启动期间显示，并报告启动失败或意外退出。
 
 服务端命令按以下顺序解析：`DSH_DESKTOP_SERVER`（按空白拆分的命令词）；开发构建则 spawn 检出仓库中已构建的 CLI（`node apps/cli/lib/bin.js web --port 0`，工作目录为仓库根，编译期由 `CARGO_MANIFEST_DIR` 固定）；打包构建优先使用 app 资源内内置的单文件 `dsh` 可执行，回退到 `PATH` 中的 `dsh`。服务端运行在独立进程组中；每条退出路径——窗口关闭（即退出应用）、Tauri 退出事件，以及处理 SIGINT/SIGTERM 的 `ctrlc` handler——都会向整个进程组发 SIGTERM，3 秒宽限期后 SIGKILL。
 

@@ -1,7 +1,9 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The shell exposes no Tauri IPC to the webview: the harness GUI talks to the managed dsh web server over HTTP/WebSocket only.",
+  "description": "The shell exposes event IPC only: it forwards the native 文件 menu actions to the webview as `desktop-menu` events; the harness GUI talks to the managed dsh web server over HTTP/WebSocket for everything else.",
   "windows": ["main"],
-  "permissions": []
+  "permissions": [
+    "core:event:default"
+  ]
 }

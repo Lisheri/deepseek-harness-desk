@@ -15,7 +15,9 @@
         "minWidth": 960,
         "minHeight": 640,
         "center": true,
-        "url": "index.html"
+        "url": "index.html",
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
       }
     ],
     "security": {
