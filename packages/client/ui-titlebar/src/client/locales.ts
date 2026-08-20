@@ -1,10 +1,7 @@
-/** `titlebar` namespace dictionaries: the window-top chrome (file operations, fold, undo/redo, add-workspace flow). */
+/** `titlebar` namespace dictionaries: the window-top chrome (fold, undo/redo, add-workspace flow). */
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
-  'menu.file': '文件操作',
-  'menu.newChat': '新聊天',
-  'menu.addWorkspace': '添加新工作区',
   'toggle.collapse': '收起侧边栏',
   'toggle.open': '展开侧边栏',
   'undo': '撤销',
@@ -20,9 +17,6 @@ export type TitlebarKey = keyof typeof zh
 
 /** English dictionary, checked complete against the zh key set. */
 export const en = {
-  'menu.file': 'File',
-  'menu.newChat': 'New Chat',
-  'menu.addWorkspace': 'Add Workspace',
   'toggle.collapse': 'Collapse sidebar',
   'toggle.open': 'Expand sidebar',
   'undo': 'Undo',

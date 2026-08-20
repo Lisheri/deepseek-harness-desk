@@ -1,9 +1,9 @@
 /**
- * Window-top chrome occupying the frame's titlebar row: the file-operations
- * dropdown (New Chat / Add Workspace), the sidebar fold button, the input
- * undo/redo history arrows, and — in the Tauri desktop shell — the window
- * drag region, the macOS traffic-light inset, and the native menu bridge
- * (the Rust shell's 文件 menu forwards desktop-menu events here).
+ * Window-top chrome occupying the frame's titlebar row: the sidebar fold
+ * button, the input undo/redo history arrows, and — in the Tauri desktop
+ * shell — the window drag region, the macOS traffic-light inset, and the
+ * native menu bridge (the Rust shell's 文件 menu forwards desktop-menu
+ * events here; file operations live in the OS menu bar, not this row).
  *
  * The add-workspace action runs the composed directory-flow occupant of
  * this package's own hole (`shell.titlebar.directoryFlow`) with the same
@@ -12,8 +12,8 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  Button, IconChevronDownOutline14, IconPanelLeftOutline16, IconRedoOutline16,
-  IconUndoOutline16, Menu, Modal, Tooltip, type MenuEntry,
+  Button, IconPanelLeftOutline16, IconRedoOutline16,
+  IconUndoOutline16, Modal, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 // Inert until `listen` runs: the module reads the Tauri IPC facade only at
 // call time, and the effect below gates every call behind the webview check.
@@ -31,10 +31,6 @@ declare global {
 
 /** Desktop-menu actions the Rust shell forwards from the native 文件 menu. */
 type DesktopMenuAction = 'new-chat' | 'add-workspace'
-
-/** File-dropdown row ids (kept distinct from wire action ids for test clarity). */
-const FILE_NEW_CHAT = 'file.new-chat'
-const FILE_ADD_WORKSPACE = 'file.add-workspace'
 
 /** True when the page runs inside the Tauri desktop webview. */
 function isTauri(): boolean {
@@ -67,11 +63,8 @@ export function TitleBar({
   const tauri = useRef(isTauri()).current
   const mac = useRef(isMac()).current
 
-  const [fileOpen, setFileOpen] = useState(false)
-  const fileAnchor = useRef<HTMLButtonElement>(null)
-
   // Live occupancy of this surface's directory-flow hole: a composition
-  // without a picking affordance hides the add entry (the browser's rule).
+  // without a picking affordance has no add route at all.
   const flowAvailable = useDirectoryFlow(occupied => occupied)
   const [flowOpen, setFlowOpen] = useState(false)
   const [picking, setPicking] = useState(false)
@@ -106,16 +99,8 @@ export function TitleBar({
     setFlowOpen(true)
   }, [])
 
-  const handleFileSelect = useCallback((id: string): void => {
-    setFileOpen(false)
-    // Two independent dispatches: the menu lists exactly these ids, and the
-    // guards keep an unknown id a no-op instead of misrouting it.
-    if (id === FILE_NEW_CHAT) newChat()
-    if (id === FILE_ADD_WORKSPACE) openDirectoryFlow()
-  }, [newChat, openDirectoryFlow])
-
-  // The Rust shell's 文件 menu drives the same two actions over events; the
-  // dropdown above remains the in-page route (plain browsers, other hosts).
+  // The Rust shell's 文件 menu drives its two actions over events; in a plain
+  // browser there is no desktop menu, so the chrome carries no file surface.
   useEffect(() => {
     if (!tauri) return
     let disposed = false
@@ -129,20 +114,13 @@ export function TitleBar({
       if (disposed) stop()
       else unlisten = stop
     }).catch(() => {
-      // No shell = no menu events; the in-page dropdown stays the only route.
+      // No shell = no menu events; the GUI's own surfaces are the only routes.
     })
     return () => {
       disposed = true
       unlisten?.()
     }
   }, [tauri, newChat, openDirectoryFlow])
-
-  const fileItems: readonly MenuEntry[] = [
-    { id: FILE_NEW_CHAT, label: t('menu.newChat') },
-    // Same availability rule as the sidebar's add button: without a composed
-    // picker there is no route to a directory, so the entry disappears.
-    ...(flowAvailable ? [{ id: FILE_ADD_WORKSPACE, label: t('menu.addWorkspace') }] : []),
-  ]
 
   // Owner side of the flow conversation (mirrors WorkspacePickFlow's contract).
   const flowOwner: DirectoryFlowOwnerProps = {
@@ -163,29 +141,6 @@ export function TitleBar({
   return (
     <div className={css.bar} data-tauri={tauri || undefined} data-mac={mac || undefined}>
       <div className={css.cluster}>
-        <Menu
-          open={fileOpen}
-          onClose={() => { setFileOpen(false) }}
-          items={fileItems}
-          onSelect={handleFileSelect}
-          align="start"
-          dense
-          portal
-          anchor={(
-            <button
-              ref={fileAnchor}
-              type="button"
-              className={css.fileButton}
-              aria-haspopup="menu"
-              aria-expanded={fileOpen}
-              onClick={() => { setFileOpen(open => !open) }}
-            >
-              <span>{t('menu.file')}</span>
-              <IconChevronDownOutline14 />
-            </button>
-          )}
-        />
-        <span className={css.sep} aria-hidden="true" />
         <Tooltip label={sidebarCollapsed ? t('toggle.open') : t('toggle.collapse')} delayMs={500}>
           <button
             type="button"

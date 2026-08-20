@@ -3,9 +3,10 @@
  * TitleBar interaction spec under the four-share props form: injected Host
  * callbacks as vi.fn()s, a recording renderSlot stub for the directory-flow
  * hole, and a plain selector stub for the occupancy hook. Asserts the
- * user-visible behavior: file-operations entries, fold labeling, undo/redo
- * routing, the add-workspace flow conversation (open/adopt/error/withdraw),
- * and the Tauri-only chrome (drag region, menu-event bridge).
+ * user-visible behavior: fold labeling, undo/redo routing, the add-workspace
+ * flow conversation (opened by the native 文件 menu's desktop-menu events,
+ * adopt/error/withdraw), and the Tauri-only chrome (drag region, menu-event
+ * bridge, late-listen retirement).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -93,6 +94,27 @@ function mount(props: {
   }
 }
 
+/**
+ * Mount inside the Tauri webview with the desktop-menu listener captured:
+ * the native 文件 menu is the only route into the add-workspace flow.
+ */
+async function mountWithMenu(): Promise<{ b: ReturnType<typeof mount>; fireMenu: (action: string) => void }> {
+  window.__TAURI_INTERNALS__ = {}
+  let handler: ((event: { payload: string }) => void) | undefined
+  listenMock.mockImplementationOnce(((_event: string, fn: (event: { payload: string }) => void) => {
+    handler = fn
+    return Promise.resolve(vi.fn())
+  }) as never)
+  const b = mount()
+  await waitFor(() => { expect(handler).toBeDefined() })
+  return {
+    b,
+    fireMenu: (action) => {
+      act(() => { handler!({ payload: action }) })
+    },
+  }
+}
+
 beforeEach(() => {
   listenMock.mockReset()
   // Default: a successful listen handing back a no-op stop; individual tests
@@ -127,38 +149,37 @@ describe('TitleBar chrome', () => {
     expect(b.redo).toHaveBeenCalledOnce()
   })
 
-  it('opens the file menu with New Chat and Add Workspace, and routes both', () => {
-    const b = mount()
-    fireEvent.click(screen.getByRole('button', { name: 'File' }))
-    fireEvent.click(screen.getByText('New Chat'))
-    expect(b.newChat).toHaveBeenCalledOnce()
-    fireEvent.click(screen.getByRole('button', { name: 'File' }))
-    fireEvent.click(screen.getByText('Add Workspace'))
+  it('carries no file-operations surface (the native menu owns them)', () => {
+    mount()
+    expect(screen.queryByRole('button', { name: 'File' })).toBeNull()
+    expect(screen.queryByRole('menu')).toBeNull()
+  })
+})
+
+describe('TitleBar add-workspace flow (driven by the native 文件 menu)', () => {
+  it('opens the directory flow for the add-workspace menu action', async () => {
+    const { b, fireMenu } = await mountWithMenu()
+    fireMenu('add-workspace')
     expect(b.flowOwner().open).toBe(true)
   })
 
-  it('closes the file menu on an outside click', () => {
-    mount()
-    const trigger = screen.getByRole('button', { name: 'File' })
-    fireEvent.click(trigger)
-    expect(trigger.getAttribute('aria-expanded')).toBe('true')
-    fireEvent.pointerDown(document.body)
-    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+  it('routes the new-chat menu action to the runtime action', async () => {
+    const { b, fireMenu } = await mountWithMenu()
+    fireMenu('new-chat')
+    expect(b.newChat).toHaveBeenCalledOnce()
+    expect(b.flowOwner().open).toBe(false)
   })
 
-  it('hides the Add Workspace entry when the directory-flow hole is unoccupied', () => {
-    const b = mount()
-    b.occupied.current = false
-    b.rerender({})
-    fireEvent.click(screen.getByRole('button', { name: 'File' }))
-    expect(screen.getByText('New Chat')).toBeTruthy()
-    expect(screen.queryByText('Add Workspace')).toBeNull()
+  it('ignores unknown menu actions', async () => {
+    const { b, fireMenu } = await mountWithMenu()
+    fireMenu('other')
+    expect(b.newChat).not.toHaveBeenCalled()
+    expect(b.flowOwner().open).toBe(false)
   })
 
-  it('withdraws an open flow whose occupant unloaded (no cancel route left)', () => {
-    const b = mount()
-    fireEvent.click(screen.getByRole('button', { name: 'File' }))
-    fireEvent.click(screen.getByText('Add Workspace'))
+  it('withdraws an open flow whose occupant unloaded (no cancel route left)', async () => {
+    const { b, fireMenu } = await mountWithMenu()
+    fireMenu('add-workspace')
     expect(b.flowOwner().open).toBe(true)
     b.occupied.current = false
     b.rerender({})
@@ -166,9 +187,8 @@ describe('TitleBar chrome', () => {
   })
 
   it('adopts a picked directory as a workspace and opens its session', async () => {
-    const b = mount()
-    fireEvent.click(screen.getByRole('button', { name: 'File' }))
-    fireEvent.click(screen.getByText('Add Workspace'))
+    const { b, fireMenu } = await mountWithMenu()
+    fireMenu('add-workspace')
     b.createWorkspace.mockResolvedValueOnce({ workspaceId: 'ws-1' })
     b.flowOwner().onPicked('/tmp/demo')
     expect(b.createWorkspace).toHaveBeenCalledWith({ path: '/tmp/demo' })
@@ -177,9 +197,8 @@ describe('TitleBar chrome', () => {
   })
 
   it('surfaces an adoption failure in the error dialog and retries through the flow', async () => {
-    const b = mount()
-    fireEvent.click(screen.getByRole('button', { name: 'File' }))
-    fireEvent.click(screen.getByText('Add Workspace'))
+    const { b, fireMenu } = await mountWithMenu()
+    fireMenu('add-workspace')
     b.createWorkspace.mockRejectedValueOnce(new Error('boom'))
     b.flowOwner().onPicked('/tmp/demo')
     await waitFor(() => { expect(screen.getByText('boom')).toBeTruthy() })
@@ -190,22 +209,19 @@ describe('TitleBar chrome', () => {
   })
 
   it('shows non-Error adoption rejections verbatim', async () => {
-    const b = mount()
-    fireEvent.click(screen.getByRole('button', { name: 'File' }))
-    fireEvent.click(screen.getByText('Add Workspace'))
+    const { b, fireMenu } = await mountWithMenu()
+    fireMenu('add-workspace')
     b.createWorkspace.mockRejectedValueOnce('raw failure')
     b.flowOwner().onPicked('/tmp/demo')
     await waitFor(() => { expect(screen.getByText('raw failure')).toBeTruthy() })
   })
 
   it('routes the flow occupant outcomes (cancel, error) to the owner surface', async () => {
-    const b = mount()
-    fireEvent.click(screen.getByRole('button', { name: 'File' }))
-    fireEvent.click(screen.getByText('Add Workspace'))
+    const { b, fireMenu } = await mountWithMenu()
+    fireMenu('add-workspace')
     act(() => { b.flowOwner().onCancel() })
     expect(b.flowOwner().open).toBe(false)
-    fireEvent.click(screen.getByRole('button', { name: 'File' }))
-    fireEvent.click(screen.getByText('Add Workspace'))
+    fireMenu('add-workspace')
     act(() => { b.flowOwner().onError('chooser missing') })
     await waitFor(() => { expect(screen.getByText('chooser missing')).toBeTruthy() })
     expect(b.flowOwner().open).toBe(false)
@@ -216,17 +232,15 @@ describe('TitleBar chrome', () => {
   })
 
   it('closes the error dialog without reopening the flow (cancel + close)', async () => {
-    const b = mount()
-    fireEvent.click(screen.getByRole('button', { name: 'File' }))
-    fireEvent.click(screen.getByText('Add Workspace'))
+    const { b, fireMenu } = await mountWithMenu()
+    fireMenu('add-workspace')
     b.createWorkspace.mockRejectedValueOnce(new Error('boom'))
     b.flowOwner().onPicked('/tmp/demo')
     await waitFor(() => { expect(screen.getByText('boom')).toBeTruthy() })
     fireEvent.click(screen.getByRole('button', { name: 'Close' }))
     expect(screen.queryByText('boom')).toBeNull()
     // Reopen for the Cancel arm: canceling keeps the flow closed too.
-    fireEvent.click(screen.getByRole('button', { name: 'File' }))
-    fireEvent.click(screen.getByText('Add Workspace'))
+    fireMenu('add-workspace')
     b.createWorkspace.mockRejectedValueOnce(new Error('boom again'))
     b.flowOwner().onPicked('/tmp/demo')
     await waitFor(() => { expect(screen.getByText('boom again')).toBeTruthy() })
@@ -288,13 +302,12 @@ describe('TitleBar desktop chrome (Tauri webview)', () => {
     expect(stop).toHaveBeenCalledOnce()
   })
 
-  it('survives a failed listen (the dropdown stays the only route)', async () => {
+  it('survives a failed listen (the chrome stays fully usable)', async () => {
     window.__TAURI_INTERNALS__ = {}
     listenMock.mockRejectedValueOnce(new Error('no ipc'))
     const b = mount()
     await waitFor(() => { expect(listenMock).toHaveBeenCalled() })
-    fireEvent.click(screen.getByRole('button', { name: 'File' }))
-    fireEvent.click(screen.getByText('New Chat'))
-    expect(b.newChat).toHaveBeenCalledOnce()
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse sidebar' }))
+    expect(b.toggleSidebar).toHaveBeenCalledOnce()
   })
 })

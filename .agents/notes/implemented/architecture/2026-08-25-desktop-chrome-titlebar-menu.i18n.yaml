@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-25-desktop-chrome-titlebar-menu.md
-2026-08-25-desktop-chrome-titlebar-menu.md: e05e32901be9031f92db69acf06e8d4baa6bdde1
-2026-08-25-desktop-chrome-titlebar-menu.zh.md: 325e6590a7eafb9a9157fd430f2f55ff423dac9d
+2026-08-25-desktop-chrome-titlebar-menu.md: 33e1464bc0e2ed4ba69efcdc99070a8067171335
+2026-08-25-desktop-chrome-titlebar-menu.zh.md: 6d726bb9ea25bafc99bc94120d3dd9b4489d8133

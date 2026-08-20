@@ -25,25 +25,6 @@
   padding: 0 8px;
 }
 
-.fileButton {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 22px;
-  padding: 0 8px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--dsw-alias-label-secondary);
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.fileButton:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
-}
-
 .iconButton {
   display: inline-flex;
   align-items: center;
