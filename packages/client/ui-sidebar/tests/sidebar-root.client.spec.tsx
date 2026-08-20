@@ -80,7 +80,7 @@ function mountShell({ collapsed = false, width = 300 }: { collapsed?: boolean; w
 }
 
 describe('SidebarRoot shell', () => {
-  it('routes New Session (capsule + wordmark) and the column toggle', () => {
+  it('routes New Session (capsule + wordmark)', () => {
     const b = mountShell()
     expect(screen.getByTestId('custom-brand-mark')).toBeTruthy()
     expect(screen.getByTestId('custom-brand-name')).toBeTruthy()
@@ -89,8 +89,6 @@ describe('SidebarRoot shell', () => {
     expect(starters).toHaveLength(2)
     for (const button of starters) fireEvent.click(button)
     expect(b.startSession).toHaveBeenCalledTimes(2)
-    fireEvent.click(screen.getByRole('button', { name: 'Collapse sidebar' }))
-    expect(b.toggleSidebar).toHaveBeenCalledOnce()
   })
 
   it('renders generic brand fallbacks when no package fills the slots', () => {
@@ -134,9 +132,12 @@ describe('SidebarRoot shell', () => {
     expect(b.toggleSidebar).toHaveBeenCalledOnce()
   })
 
-  it('renders statically collapsed on a cold start (no crossfade classes)', () => {
+  it('renders statically collapsed on a cold start with the static brand mark (no fold control)', () => {
     const b = mountShell({ collapsed: true })
     expect(b.regionOwner().wide).toBe(false)
-    expect(screen.getByRole('button', { name: 'Open sidebar' })).toBeTruthy()
+    // The fold toggle moved to the frame titlebar: the rail's top slot is the
+    // static brand mark, not a button.
+    expect(screen.getByTestId('custom-brand-mark')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Open sidebar' })).toBeNull()
   })
 })

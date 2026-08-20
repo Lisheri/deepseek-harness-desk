@@ -84,9 +84,9 @@
   from { opacity: 0; }
 }
 
-/* Logo row (figma pad (4,8,4,8)): expanded keeps the panel toggle at the
-   right edge; the rail gives every control the same base left anchor before
-   the shared entry translation is applied. */
+/* Logo row (figma pad (4,8,4,8)): expanded holds the brand (New Session
+   shortcut) at the left edge; the rail shows the static whale mark on the
+   shared entry anchor before the entry translation is applied. */
 .logoRow {
   flex: none;
   display: flex;
@@ -183,21 +183,8 @@
   height: 36px;
 }
 
-/* Rail logo swap: collapsed, the toggle rests as the whale mark (brand ink,
-   no hover circle) and hovering reveals the panel icon — the expand
-   affordance (figma sidebar-hover flow). Expanded it is a plain panel icon. */
-.collapsed .toggle .panelIcon {
-  display: none;
-}
-
-.collapsed .toggle:hover .panelIcon {
-  display: inline;
-}
-
-.collapsed .toggle:hover .railMark {
-  display: none;
-}
-
+/* The collapsed rail rests on the whale mark (brand ink, no hover circle);
+   the fold/expand control moved to the frame titlebar. */
 .railMark {
   display: inline-flex;
   align-items: center;

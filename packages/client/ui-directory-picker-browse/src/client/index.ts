@@ -89,4 +89,10 @@ export function apply(ctx: ClientContext): void {
         name: 'sidebar.workspaces.directoryFlow', inject: injected,
       }, BrowseDirectoryFlow)
     }))
+  // The titlebar hole rides its own declaration lifetime (ui-titlebar may be
+  // composed or not, independently of the two ui-workspace surfaces).
+  ctx.slots.inject('shell.titlebar.directoryFlow', () =>
+    ctx.slots.register({
+      name: 'shell.titlebar.directoryFlow', inject: injected,
+    }, BrowseDirectoryFlow))
 }

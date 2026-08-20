@@ -20,7 +20,7 @@ import css from './AppFrame.module.css'
 /** Full composed props: runtime share + child-slot render share + store share. */
 export type AppFrameProps =
   & PropsRuntime<'root'>
-  & PropsRenderSlots<'sidebar' | 'conversation' | 'details' | 'shell.overlay'>
+  & PropsRenderSlots<'sidebar' | 'conversation' | 'details' | 'shell.overlay' | 'shell.titlebar'>
   & PropsStore<ReturnType<typeof createLayoutStore>>
 
 /** Center column grid item (session-body building block). */
@@ -162,40 +162,49 @@ export function AppFrame({
   }, [actions])
 
   return (
-    <div
-      ref={frameRef}
-      className={css.frame}
-      style={{ gridTemplateColumns: `${cols.sidebar}px minmax(0, 1fr) ${cols.details}px` }}
-      data-sidebar-collapsed={sidebarCollapsed || undefined}
-      data-details-collapsed={cols.details === 0 || undefined}
-      data-dragging={dragging || undefined}
-    >
-      <div className={css.sidebarCol}>
-        {/* Render-site slot call with live concession output: a closed
-            sidebar keeps the mounted slot at the compact-rail width, and the
-            component sees its rendered state as owner params decided here
-            (collapsed follows the resolved rail, so a derived auto-collapse
-            renders the rail UI too). */}
-        {renderSlot('sidebar', {
-          collapsed: sidebarCollapsed,
-          width: cols.sidebar,
-        })}
+    <div className={css.shell}>
+      {/* The frame-wide titlebar row (desktop chrome: file operations,
+          sidebar fold, undo/redo). Rendered above the columns so the shell
+          drag handles and column clipping never reach it. */}
+      <div className={css.titlebarRow}>
+        {renderSlot('shell.titlebar', { sidebarCollapsed })}
       </div>
-      <>
-        {/* Both column occupants stay at fixed tree positions from first
-            paint — no loading gate: a bare status line reads worse than
-            the shell's own pending rendering. The conversation
-            is session-maybe; the strict details entry naturally renders
-            empty while no session is current. */}
-        <CenterColumn>{renderSlot('conversation', {})}</CenterColumn>
-        <DetailsColumn>{renderSlot('details', {})}</DetailsColumn>
-      </>
-      <div className={css.overlayLayer} data-shell-overlay>
-        {renderSlot('shell.overlay', {})}
+      <div
+        ref={frameRef}
+        data-dsh-frame
+        className={css.frame}
+        style={{ gridTemplateColumns: `${cols.sidebar}px minmax(0, 1fr) ${cols.details}px` }}
+        data-sidebar-collapsed={sidebarCollapsed || undefined}
+        data-details-collapsed={cols.details === 0 || undefined}
+        data-dragging={dragging || undefined}
+      >
+        <div className={css.sidebarCol}>
+          {/* Render-site slot call with live concession output: a closed
+              sidebar keeps the mounted slot at the compact-rail width, and the
+              component sees its rendered state as owner params decided here
+              (collapsed follows the resolved rail, so a derived auto-collapse
+              renders the rail UI too). */}
+          {renderSlot('sidebar', {
+            collapsed: sidebarCollapsed,
+            width: cols.sidebar,
+          })}
+        </div>
+        <>
+          {/* Both column occupants stay at fixed tree positions from first
+              paint — no loading gate: a bare status line reads worse than
+              the shell's own pending rendering. The conversation
+              is session-maybe; the strict details entry naturally renders
+              empty while no session is current. */}
+          <CenterColumn>{renderSlot('conversation', {})}</CenterColumn>
+          <DetailsColumn>{renderSlot('details', {})}</DetailsColumn>
+        </>
+        <div className={css.overlayLayer} data-shell-overlay>
+          {renderSlot('shell.overlay', {})}
+        </div>
+        {/* The collapsed rail is fixed-width: no resize handle while closed. */}
+        {!sidebarCollapsed && <DragHandle side="sidebar" left={cols.sidebar} onStart={onSidebarStart} onDrag={onSidebarDrag} onEnd={onDragEnd} />}
+        {cols.details > 0 && <DragHandle side="details" left={viewport - cols.details} onStart={onDetailsStart} onDrag={onDetailsDrag} onEnd={onDragEnd} />}
       </div>
-      {/* The collapsed rail is fixed-width: no resize handle while closed. */}
-      {!sidebarCollapsed && <DragHandle side="sidebar" left={cols.sidebar} onStart={onSidebarStart} onDrag={onSidebarDrag} onEnd={onDragEnd} />}
-      {cols.details > 0 && <DragHandle side="details" left={viewport - cols.details} onStart={onDetailsStart} onDrag={onDetailsDrag} onEnd={onDragEnd} />}
     </div>
   )
 }

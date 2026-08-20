@@ -57,13 +57,16 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'conversation.hero.workspace.directoryFlow': { kind: 'single'; scope: 'root'; owner: DirectoryFlowOwnerProps }
     /** Directory-flow hole under the sidebar browsing region (declared by the WorkspaceBrowser entry). */
     'sidebar.workspaces.directoryFlow': { kind: 'single'; scope: 'root'; owner: DirectoryFlowOwnerProps }
+    /** Directory-flow hole under the titlebar's add-workspace action (declared by ui-titlebar's shell.titlebar entry). */
+    'shell.titlebar.directoryFlow': { kind: 'single'; scope: 'root'; owner: DirectoryFlowOwnerProps }
   }
 }
 
-/** The two directory-flow holes; a flow package's client half registers its one component into both. */
+/** The three directory-flow holes; a flow package's client half registers its one component into all three. */
 export type DirectoryFlowSlotName =
   | 'conversation.hero.workspace.directoryFlow'
   | 'sidebar.workspaces.directoryFlow'
+  | 'shell.titlebar.directoryFlow'
 
 /**
  * Directory-picking share both trigger surfaces consume. Occupancy rides the

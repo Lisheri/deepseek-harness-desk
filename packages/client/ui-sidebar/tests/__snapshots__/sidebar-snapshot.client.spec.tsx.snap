@@ -12,39 +12,24 @@ exports[`sidebar shell snapshots > renders the collapsed rail after the crossfad
     <div
       class="logoRow"
     >
-      <button
-        aria-label="Open sidebar"
-        class="iconButton toggle"
-        type="button"
+      <span
+        aria-hidden="true"
+        class="railMark"
       >
-        <span
-          aria-hidden="true"
-          class="railMark"
+        <div
+          data-slot="sidebar.brand.mark"
+          style="display: contents;"
         >
-          <div
-            data-slot="sidebar.brand.mark"
-            style="display: contents;"
-          >
-            <svg
-              aria-hidden="true"
-              data-content="965fe321"
-              fill="none"
-              height="17.6580310880829"
-              viewBox="0 0 23.16 17.04"
-              width="24"
-            />
-          </div>
-        </span>
-        <svg
-          class="panelIcon"
-          data-content="35f95b0c"
-          fill="none"
-          height="18"
-          viewBox="0 0 16 16"
-          width="18"
-          xmlns="http://www.w3.org/2000/svg"
-        />
-      </button>
+          <svg
+            aria-hidden="true"
+            data-content="965fe321"
+            fill="none"
+            height="17.6580310880829"
+            viewBox="0 0 23.16 17.04"
+            width="24"
+          />
+        </div>
+      </span>
     </div>
     <button
       aria-label="New session"
@@ -150,21 +135,6 @@ exports[`sidebar shell snapshots > renders the expanded column (wordmark, capsul
             </div>
           </span>
         </span>
-      </button>
-      <button
-        aria-label="Collapse sidebar"
-        class="iconButton toggle"
-        type="button"
-      >
-        <svg
-          class="panelIcon"
-          data-content="35f95b0c"
-          fill="none"
-          height="16"
-          viewBox="0 0 16 16"
-          width="16"
-          xmlns="http://www.w3.org/2000/svg"
-        />
       </button>
     </div>
     <button
@@ -276,21 +246,6 @@ exports[`sidebar shell snapshots > renders the expanded column in the default lo
             </div>
           </span>
         </span>
-      </button>
-      <button
-        aria-label="收起侧边栏"
-        class="iconButton toggle"
-        type="button"
-      >
-        <svg
-          class="panelIcon"
-          data-content="35f95b0c"
-          fill="none"
-          height="16"
-          viewBox="0 0 16 16"
-          width="16"
-          xmlns="http://www.w3.org/2000/svg"
-        />
       </button>
     </div>
     <button

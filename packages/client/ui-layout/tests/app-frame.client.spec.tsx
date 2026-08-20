@@ -62,6 +62,7 @@ function mountFrame() {
     if (key === 'conversation') return <div data-testid="center-content" />
     if (key === 'details') return <div data-testid="details-content" />
     if (key === 'conversation.empty') return <div data-testid="empty-content" />
+    if (key === 'shell.titlebar') return <div data-testid="titlebar-content" />
     return <div data-testid="other-content" />
   }) as AppFrameProps['renderSlot']
   const useSessions = ((sel: (s: SessionListState) => unknown) => {
@@ -91,7 +92,9 @@ function mountFrame() {
     />
   )
   const utils = render(element())
-  const frame = utils.container.firstElementChild as HTMLElement
+  // The frame sits inside the shell wrapper (titlebar row + frame); the data
+  // attribute names the grid element the track math targets.
+  const frame = utils.container.querySelector('[data-dsh-frame]') as HTMLElement
   return { instance, frame, slotCalls, rerenderFrame: () => { utils.rerender(element()) }, ...utils }
 }
 
@@ -152,6 +155,19 @@ describe('AppFrame', () => {
     expect(keys).not.toContain('conversation.empty')
     expect(slotCalls.find(c => c.key === 'conversation')!.props).toEqual({})
     expect(slotCalls.find(c => c.key === 'details')!.props).toEqual({})
+  })
+
+  it('renders the titlebar row slot above the frame with the fold state as owner props', () => {
+    const { instance, slotCalls, getByTestId, rerenderFrame } = mountFrame()
+    const titlebarCalls = () => slotCalls.filter(c => c.key === 'shell.titlebar')
+    expect(titlebarCalls().at(-1)!.props).toEqual({ sidebarCollapsed: false })
+    // The titlebar row is a sibling ABOVE the frame, never its descendant.
+    const frame = document.querySelector('[data-dsh-frame]')!
+    expect(frame.querySelector('[data-testid="titlebar-content"]')).toBeNull()
+    expect(getByTestId('titlebar-content')).toBeTruthy()
+    act(() => { instance.actions.toggleSidebar() })
+    act(() => { rerenderFrame() })
+    expect(titlebarCalls().at(-1)!.props).toEqual({ sidebarCollapsed: true })
   })
 
   it('keeps the conversation slot mounted while no session is current', () => {

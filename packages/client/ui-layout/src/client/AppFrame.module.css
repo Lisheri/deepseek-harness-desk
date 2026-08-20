@@ -1,8 +1,23 @@
+/* Outer column: titlebar row + frame. The frame fills the remaining height
+   so its grid (and the drag handles anchored to it) never underlaps the
+   titlebar chrome. */
+.shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* The titlebar occupant owns its height; an unoccupied hole collapses to 0. */
+.titlebarRow {
+  flex: 0 0 auto;
+}
+
 .frame {
   position: relative; /* anchors the drag handles, which straddle column borders */
   display: grid;
   grid-template-rows: 100%;
-  height: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: hidden;
   background: var(--dsw-alias-bg-base);
   /* Collapse/expand animates the tracks on the deepsuite sider curve

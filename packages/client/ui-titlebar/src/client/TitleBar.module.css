@@ -1,0 +1,81 @@
+/* The window-top chrome row. Height stays compact so the macOS overlay
+   traffic lights (drawn above the webview) sit centered on it. */
+.bar {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  flex: 0 0 auto;
+  background: var(--dsw-alias-bg-base);
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* macOS overlay titlebar: the native traffic lights occupy the top-left
+   corner, so the chrome cluster starts after them. Other platforms render
+   their native title bar separately and need no inset. */
+.bar[data-tauri][data-mac] {
+  padding-left: 78px;
+}
+
+.cluster {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+}
+
+.fileButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.fileButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.iconButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.sep {
+  width: 1px;
+  height: 14px;
+  margin: 0 4px;
+  background: var(--dsw-alias-border-l1);
+}
+
+/* The bar's empty middle doubles as the window drag region (Tauri reads the
+   data attribute on this node); buttons never overlap it. */
+.dragRegion {
+  flex: 1 1 auto;
+  align-self: stretch;
+}
+
+.modalError {
+  color: var(--dsw-alias-state-error-primary);
+}

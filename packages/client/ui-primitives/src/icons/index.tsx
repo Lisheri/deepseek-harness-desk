@@ -167,6 +167,28 @@ export const IconChevronDownOutline14 = ({ size = 14, className }: IconProps) =>
   </svg>
 )
 
+/**
+ * The undo/redo glyph pair: one counter-clockwise arrow path, mirrored
+ * horizontally for redo so the two arrows stay geometrically symmetric.
+ */
+const UNDO_REDO_PATH = 'M8.333 5.333C6.566 5.333 4.966 5.993 3.733 7.066L1.333 4.667V10.667H7.333L4.92 8.253C5.847 7.48 7.027 7 8.333 7C10.693 7 12.7 8.54 13.4 10.667L14.98 10.147C14.053 7.353 11.433 5.333 8.333 5.333Z'
+
+/** ic_ds_undo_outline_16 — counter-clockwise history arrow (titlebar undo). */
+export const IconUndoOutline16 = ({ size = 16, className }: IconProps) => (
+  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d={UNDO_REDO_PATH} fill="currentColor" />
+  </svg>
+)
+
+/** ic_ds_redo_outline_16 — the undo glyph's horizontal mirror (titlebar redo). */
+export const IconRedoOutline16 = ({ size = 16, className }: IconProps) => (
+  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <g transform="matrix(-1,0,0,1,16,0)">
+      <path d={UNDO_REDO_PATH} fill="currentColor" />
+    </g>
+  </svg>
+)
+
 /** ic_ds_chevron_left_outline_14 */
 export const IconChevronLeftOutline14 = ({ size = 14, className }: IconProps) => (
   <svg width={size} height={size} className={className} viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">

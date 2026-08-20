@@ -81,6 +81,14 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * `id` is added beside the shipped entries instead of replacing them.
      */
     'shell.overlay': { kind: 'list'; scope: 'root' }
+    /**
+     * The frame-wide titlebar row above the three columns: desktop chrome
+     * (file operations, sidebar fold, undo/redo, drag region). Occupied by
+     * ui-titlebar's TitleBar; an empty hole collapses to zero height. The
+     * occupant receives the live sidebar-fold state so its fold button can
+     * label the action it performs.
+     */
+    'shell.titlebar': { kind: 'single'; scope: 'root'; owner: TitlebarOwnerProps }
   }
 }
 
@@ -96,6 +104,12 @@ export interface SidebarOwnerProps {
   collapsed: boolean
   /** Rendered column width in px (SIDEBAR_COLLAPSED when collapsed). */
   width: number
+}
+
+/** Titlebar owner share: the resolved sidebar-fold state (auto-collapse included). */
+export interface TitlebarOwnerProps {
+  /** True when the sidebar renders as the collapsed rail. */
+  sidebarCollapsed: boolean
 }
 
 /** Conversation owner share: business state and actions belong to the registrant. */
@@ -124,6 +138,7 @@ export function apply(ctx: ClientContext): void {
         'conversation': { kind: 'single', scope: 'session-maybe' },
         'details': { kind: 'single', scope: 'session' },
         'shell.overlay': { kind: 'list', scope: 'root' },
+        'shell.titlebar': { kind: 'single', scope: 'root' },
       },
       // Exclusive store: the factory itself — the framework instantiates per
       // entry and delivers useStore/actions to AppFrame as standard props.
