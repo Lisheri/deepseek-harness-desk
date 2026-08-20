@@ -259,7 +259,13 @@ export function virtualManifest(virtual: string, name: string): VirtualManifest 
   const prefix = `${name.replace('/', '+')}@`
   const entry = readdirSync(virtual).find(dir => dir.startsWith(prefix))
   if (entry !== undefined) {
-    return JSON.parse(readFileSync(resolve(virtual, entry, 'node_modules', name, 'package.json'), 'utf8')) as VirtualManifest
+    // pnpm 11 leaves an empty stub directory for an optional platform payload
+    // it skipped on this host; treat it as a miss so the content scan below
+    // (or the caller's `undefined`) decides, instead of failing on the read.
+    const manifestPath = resolve(virtual, entry, 'node_modules', name, 'package.json')
+    if (existsSync(manifestPath)) {
+      return JSON.parse(readFileSync(manifestPath, 'utf8')) as VirtualManifest
+    }
   }
   for (const dir of readdirSync(virtual)) {
     const candidate = resolve(virtual, dir, 'node_modules', name, 'package.json')

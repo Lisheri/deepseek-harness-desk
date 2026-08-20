@@ -114,6 +114,22 @@ describe('virtualManifest', () => {
     }
   })
 
+  it('skips a prefix-matching stub directory pnpm leaves for a skipped optional platform payload', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-notices-stub-'))
+    try {
+      const name = '@scope/pkg'
+      const version = '1.5.0'
+      const store = join(root, 'store')
+      // pnpm 11 creates the store directory for an optional dependency whose
+      // platform does not match the host, but links nothing inside it.
+      mkdirSync(join(store, `${name.replace('/', '+')}@${version}`), { recursive: true })
+
+      expect(virtualManifest(store, name)).toBeUndefined()
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('returns undefined when neither the prefix nor the content scan finds the package', () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-notices-miss-'))
     try {
